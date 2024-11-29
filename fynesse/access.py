@@ -66,6 +66,30 @@ def create_connection(user, password, host, database, port=3306):
         print(f"Error connecting to the MariaDB Server: {e}")
     return conn
 
+
+def populate_table_with_load_infile(conn, file_name, table_name):
+    try:
+      cur = conn.cursor()
+      
+      query = f"""
+        LOAD DATA LOCAL INFILE '{file_name}'
+        INTO TABLE `{table_name}`
+        FIELDS TERMINATED BY ',' 
+        OPTIONALLY ENCLOSED by '\"' 
+        LINES STARTING BY '' 
+        TERMINATED BY '\n';
+      """
+      cur.execute(query)
+      conn.commit()
+
+      
+      print(f"Data successfully loaded from {file_name} into {table_name}.")
+    
+    except Exception as e:
+      print(f"An error occured: {e}")   
+
+
+
 def housing_upload_join_data(conn, year):
   start_date = str(year) + "-01-01"
   end_date = str(year) + "-12-31"
