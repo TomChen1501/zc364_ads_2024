@@ -89,7 +89,6 @@ def populate_table_with_load_infile(conn, file_name, table_name):
       print(f"An error occured: {e}")   
 
 
-
 def housing_upload_join_data(conn, year):
   start_date = str(year) + "-01-01"
   end_date = str(year) + "-12-31"
