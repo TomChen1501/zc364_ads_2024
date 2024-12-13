@@ -42,16 +42,6 @@ def GLM_train(X, y, freq_weights=None):
 def GLM_predict(model, X):
     return model.predict(X)
 
-def plot_correration_matrix(correlation_features, result_gdf):
-    correlation_matrix = result_gdf[correlation_features].corr()
-
-    # Plot a heatmap
-    plt.figure(figsize=(21, 14))
-    sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap='coolwarm', cbar=True, square=True)
-    plt.title('Feature Correlation Heatmap with Target Variable (y)')
-    plt.tight_layout()
-    plt.show()
-
 def plot_actual_vs_predicted(result_gdf, explanatory_variable,target_variable, predicted_variable):
     plt.scatter(result_gdf[explanatory_variable], result_gdf[target_variable], label='Actual', alpha=0.5, s=0.5)
     plt.scatter(result_gdf[explanatory_variable], result_gdf[predicted_variable], label='Predicted', color='red', alpha=0.5, s=0.4)
