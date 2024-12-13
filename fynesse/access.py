@@ -8,6 +8,10 @@ import math
 import osmnx as ox
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import osmium
+import osmium.filter
+from shapely.geometry import Point
+from pyproj import CRS
 
 """These are the types of import we might expect in this file
 import httplib2
@@ -41,6 +45,7 @@ def download_price_paid_data(year_from, year_to):
             if response.status_code == 200:
                 with open("." + file_name.replace("<year>", str(year)).replace("<part>", str(part)), "wb") as file:
                     file.write(response.content)
+
 
 def create_connection(user, password, host, database, port=3306):
     """ Create a database connection to the MariaDB database
@@ -110,6 +115,7 @@ def housing_upload_join_data(conn, year):
   conn.commit()
   print('Data stored for year: ' + str(year))
 
+
 def building_price_matching(buildings_with_address_df, pp_data_df):
   buildings_with_address_df['addr:housenumber'] = buildings_with_address_df['addr:housenumber'].str.strip().str.lower()
   buildings_with_address_df['addr:street'] = buildings_with_address_df['addr:street'].str.strip().str.lower()
@@ -167,6 +173,7 @@ def query_to_dataframe(conn, query):
 
   df = pd.DataFrame(rows, columns = column_names)
   return df
+
 
 def get_box_bounds(lat, lon, box_size_km=1):
     """
@@ -244,3 +251,104 @@ def get_buildings_within_box(place_name, tags, latitude, longitude, box_size_km=
   plt.show()
 
   return buildings_with_address_df
+
+
+def extract_osm_data_from_tags(tags, filename):
+  data = []
+  fp = osmium.FileProcessor(filename).with_filter(osmium.filter.EntityFilter(osmium.osm.NODE)).with_filter(osmium.filter.TagFilter(*tags))
+
+  # Iterate through the osmium file processor object
+  for obj in fp:
+      if not hasattr(obj, 'location'):
+          continue
+      # Extract the data before it gets removed
+      obj_data = {
+          "id": getattr(obj, "id", None),
+          "latitude": obj.location.lat,
+          "longitude": obj.location.lon,
+          "tags": dict(obj.tags),
+          "geometry": Point(obj.location.lon, obj.location.lat) if hasattr(obj, "location") else None
+      }
+      data.append(obj_data)
+
+  # Convert the list of data to a GeoDataFrame
+  crs4326 = CRS.from_string("EPSG:4326")
+  osm_gdf = gpd.GeoDataFrame(data, crs=crs4326)
+  return osm_gdf
+
+def preprocess_osm_data(osm_data_origin, features, max_feature_length = 1000000): 
+  osm_data = osm_data_origin.copy()
+  for k, v in features:
+      feature_length = osm_data[osm_data['tags'].apply(lambda x: x.get(k)) == v].shape[0]
+      if feature_length > max_feature_length:
+          osm_data = osm_data.drop(osm_data[osm_data['tags'].apply(lambda x: x.get(k)) == v].sample(frac=1-max_feature_length/feature_length, random_state=42).index)
+
+  crs27700 = CRS.from_string("EPSG:27700")
+  osm_data = osm_data.to_crs(crs27700)
+  return osm_data
+
+def read_and_preprocess_ns_sec_data(file_path):
+  """Read the NS-SEC data from a file and return a DataFrame"""
+  ns_sec_data = pd.read_csv(file_path)
+  
+  # Calculate the total observations for each Output Areas Code
+  ns_sec_data['Total Observations'] = ns_sec_data.groupby('Output Areas Code')['Observation'].transform('sum')
+
+  # Normalize the Observation column
+  ns_sec_data['Normalized Observation'] = (ns_sec_data['Observation'] / ns_sec_data['Total Observations'])
+
+  filtered_ns_sec_data = ns_sec_data[ns_sec_data['National Statistics Socio-economic Classification (NS-SeC) (10 categories) Code'] == 9].rename(columns={"Output Areas Code": "OA21CD"})
+
+  # Save the result to a new file
+  output_file = "filtered_normalized_output_areas_code.csv"
+  filtered_ns_sec_data.to_csv(output_file, index=False)
+
+  print(f"Normalized data saved to {output_file}")
+
+  return filtered_ns_sec_data
+
+def merge_and_filter_columns(output_areas_gdf, ns_sec_data, features):
+    sampled_merged_gdf = output_areas_gdf.merge(ns_sec_data, on='OA21CD')
+
+    # Drop irrelevant columns
+    column_names = ['OA21CD'] + [f'{feature}_weight' for _, feature in features] + ['Normalized Observation']
+
+    filtered_sampled_merged_gdf = sampled_merged_gdf[column_names]
+    return filtered_sampled_merged_gdf
+
+def access_population_density_data(filtered_merged_gdf, output_areas_gdf_bng):
+    filtered_merged_gdf = filtered_merged_gdf.copy()
+    temp_gdf = filtered_merged_gdf.merge(output_areas_gdf_bng[['OA21CD', 'area']], on='OA21CD')
+
+    filtered_merged_gdf['population density'] = temp_gdf['Total Observations'] / temp_gdf['area']
+
+    # Remove the outlier
+    filtered_merged_gdf = filtered_merged_gdf[filtered_merged_gdf['OA21CD'] != 'E00187556'].copy()
+
+    # Normalize the population density
+    filtered_merged_gdf['population density'] = filtered_merged_gdf['population density']/filtered_merged_gdf['population density'].max()
+
+    return filtered_merged_gdf
+
+def access_dependent_children_data(file_path):
+    dependent_children_data = pd.read_csv(file_path, skiprows = 6)
+    dependent_children_data = dependent_children_data[['Local authority code (2022)', 'Local authority name (2022)', 'Age of dependent child', ' Total number of dependent children: 2021 ']]
+    dependent_children_data[' Total number of dependent children: 2021 '] = dependent_children_data[' Total number of dependent children: 2021 '].replace(',', '', regex=True).replace('c', '5', regex=True).astype(int)
+
+    dependent_children_data['Total dependent children'] = dependent_children_data.groupby('Local authority code (2022)')[' Total number of dependent children: 2021 '].transform('sum')
+
+    dependent_children_data['Normalized dependent children'] = (dependent_children_data[' Total number of dependent children: 2021 '] / dependent_children_data['Total dependent children'])
+
+    return dependent_children_data
+
+def produce_filtered_merged_dependent_children_gdf(lad_featured_gdf, dependent_children_data):
+    filtered_dependent_children_data = dependent_children_data[dependent_children_data['Age of dependent child'] == 0]
+
+    merged_dependent_children_gdf = lad_featured_gdf.merge(filtered_dependent_children_data, left_on='LAD22CD', right_on='Local authority code (2022)', how='inner')
+
+    filtered_merged_dependent_children_gdf = merged_dependent_children_gdf[['LAD22CD', 'library_weight', 'student_accommodation_weight', 'playground_weight', 'sports_centre_weight', 'pitch_weight', 'garden_weight', 'sports_hall_weight', 'fitness_centre_weight', ' Total number of dependent children: 2021 ', 'Normalized dependent children']]
+
+    return filtered_merged_dependent_children_gdf
+
+
+

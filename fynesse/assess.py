@@ -4,6 +4,8 @@ from . import access
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
 
 """These are the types of import we might expect in this file
 import pandas
@@ -66,3 +68,47 @@ def price_area_correlation(final_matched_df):
   print(correlations)
   print("average correlation: " + str(correlations.sum()/len(correlations)))
   return correlation
+
+def calculate_weights(output_areas_gdf, osm_gdf, feature_name, max_distance = 20000): # only works for bng coordinates
+    output_areas_gdf[f'{feature_name}_weight'] = 0.0
+
+    for index, area in output_areas_gdf.iterrows():
+        polygon = area['geometry'] 
+        osm_gdf['distance'] = polygon.distance(osm_gdf['geometry'])
+        osm_gdf['weight'] = 1 - (osm_gdf['distance'] / max_distance) ** 2
+        osm_gdf['weight'] = np.maximum(osm_gdf['weight'], 0)
+        output_areas_gdf.at[index, f'{feature_name}_weight'] = osm_gdf['weight'].sum()
+
+
+def produce_correlation_features_student_percentage(features):
+    correlation_features = [f'{feature}_weight' for _, feature in features] + ['school_weight', 'population density', 'Normalized Observation']
+    return correlation_features
+
+def plot_correration_matrix(correlation_features, result_gdf):
+    correlation_matrix = result_gdf[correlation_features].corr()
+
+    # Plot a heatmap
+    plt.figure(figsize=(21, 14))
+    sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap='coolwarm', cbar=True, square=True)
+    plt.title('Feature Correlation Heatmap with Target Variable (y)')
+    plt.tight_layout()
+    plt.show()
+
+def calculate_correlation_with_target_variable(correlation_features, result_gdf, target_variable):
+    correlation_with_y = result_gdf[correlation_features].corr()[target_variable].drop(target_variable)
+
+    plt.figure(figsize=(10, 6))
+    correlation_with_y.sort_values().plot(kind='barh', color='skyblue')
+    plt.title('Feature Correlation with Target Variable (y)')
+    plt.xlabel('Correlation')
+    plt.ylabel('Features')
+    plt.tight_layout()
+    plt.show()
+
+def calculate_osm_tags_weight_features(features, osm_tags_gdf, output_areas_gdf, max_distance = 20000):
+
+    for key, value in tqdm(features):
+        feature_gdf = osm_tags_gdf[osm_tags_gdf['tags'].apply(lambda x: x.get(key)) == value]
+
+        calculate_weights(output_areas_gdf, feature_gdf.copy(), value, max_distance)
+

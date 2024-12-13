@@ -27,7 +27,7 @@ VERSION = "0.1.0"
 
 # What packages are required for this module to be executed?
 REQUIRED = [
-    "pandas", "numpy", "jupyter", "matplotlib", "pymysql", "requests", "osmnx", "geopandas", "seaborn"
+    "pandas", "numpy", "jupyter", "matplotlib", "pymysql", "requests", "osmnx", "geopandas", "seaborn", "osmium", "shapely", "pyproj", "tqdm", "statsmodels"
 ]
 
 # What packages are optional?
