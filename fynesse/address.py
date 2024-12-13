@@ -74,3 +74,12 @@ def get_response_variable_dependent_children(data):
 def get_frequency_weights_dependent_children(data):
     return data[' Total number of dependent children: 2021 ']
 
+def get_explanatory_variables_housing(data, features):
+    X = np.vstack([data[f'{feature}_weight'] for _, feature in features])
+    X = X.T
+    X = sm.add_constant(X, has_constant='add')
+    return X
+
+def get_response_variable_housing(data):
+    y = data['price']
+    return y

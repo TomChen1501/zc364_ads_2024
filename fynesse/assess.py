@@ -112,3 +112,20 @@ def calculate_osm_tags_weight_features(features, osm_tags_gdf, output_areas_gdf,
 
         calculate_weights(output_areas_gdf, feature_gdf.copy(), value, max_distance)
 
+def categorize_housing_type(tenure_type, property_type, pp_data_gdf_bng):
+    result = {}
+    for t in tenure_type:
+        for p in property_type:
+            result[(t, p)] = pp_data_gdf_bng[(pp_data_gdf_bng['tenure_type'] == t) & (pp_data_gdf_bng['property_type'] == p)]
+            print(f"Number of {t} and {p}: {result[(t, p)].shape[0]}")
+    return result
+
+def sample_categorize_housing_type(categorize_housing_type_dict, sample_size=2000):
+    result = {}
+    for key, value in categorize_housing_type_dict.items():
+        if value.shape[0] > sample_size:
+            result[key] = value.sample(frac=sample_size/value.shape[0], random_state=42)
+        else:
+            result[key] = value
+        print(f"Number of {key}: {result[key].shape[0]}")
+    return result
